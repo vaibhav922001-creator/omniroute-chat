@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>OmniRoute Chat</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c96442'/%3E%3Cpath d='M9 16h14M17 10l6 6-6 6' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="Conversations">
+      <div class="sidebar-top">
+        <button class="btn primary full" id="newChat">+ New chat</button>
+      </div>
+      <nav class="chat-list" id="chatList"></nav>
+      <div class="sidebar-bottom">
+        <button class="btn ghost full" id="openSettings">Settings</button>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Toggle sidebar">☰</button>
+        <select id="modelSelect" aria-label="Model"></select>
+        <span class="status" id="status" role="status"></span>
+      </header>
+
+      <section class="messages" id="messages" aria-live="polite">
+        <div class="empty" id="empty">
+          <h1>How can I help?</h1>
+          <p>Ask anything. Requests are routed through your OmniRoute gateway.</p>
+          <div class="suggestions" id="suggestions">
+            <button class="chip">Summarize a document I paste in</button>
+            <button class="chip">Draft a professional email</button>
+            <button class="chip">Explain a concept simply</button>
+            <button class="chip">Write and debug some code</button>
+          </div>
+        </div>
+      </section>
+
+      <footer class="composer-wrap">
+        <div class="attachments" id="attachments"></div>
+        <form class="composer" id="composer">
+          <button type="button" class="icon-btn" id="attachBtn" aria-label="Attach files" title="Attach images or text files">＋</button>
+          <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.sql" />
+          <textarea id="input" rows="1" placeholder="Message… (Enter to send, Shift+Enter for a new line)" aria-label="Message"></textarea>
+          <button type="submit" class="btn primary send" id="sendBtn">Send</button>
+          <button type="button" class="btn danger send hidden" id="stopBtn">Stop</button>
+        </form>
+        <p class="hint">AI can make mistakes. Check important information.</p>
+      </footer>
+    </main>
+  </div>
+
+  <dialog id="settings">
+    <form method="dialog" class="settings-form" id="settingsForm">
+      <h2>Settings</h2>
+      <label>System prompt
+        <textarea id="systemPrompt" rows="4" placeholder="Optional instructions applied to every chat, e.g. 'You are a concise financial analyst.'"></textarea>
+      </label>
+      <label>Temperature <output id="tempOut">0.7</output>
+        <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7" />
+      </label>
+      <label class="row"><input type="checkbox" id="useTemp" /> Send temperature (leave off to use the model default)</label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="clearAll">Delete all chats</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="closeSettings">Cancel</button>
+        <button type="submit" class="btn primary" id="saveSettings" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
