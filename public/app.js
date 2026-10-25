@@ -27,6 +27,9 @@
     temperature: $("temperature"),
     tempOut: $("tempOut"),
     useTemp: $("useTemp"),
+    connection: $("connection"),
+    baseUrl: $("baseUrl"),
+    apiKey: $("apiKey"),
   };
 
   // ---------- State ----------
@@ -35,6 +38,7 @@
     activeId: null,
     model: "",
     settings: { systemPrompt: "", temperature: 0.7, useTemp: false },
+    connection: { baseUrl: "", apiKey: "" },
   });
 
   function load() {
@@ -42,7 +46,12 @@
       const raw = localStorage.getItem(STORE_KEY);
       if (!raw) return defaultState();
       const parsed = JSON.parse(raw);
-      return { ...defaultState(), ...parsed, settings: { ...defaultState().settings, ...(parsed.settings || {}) } };
+      return {
+        ...defaultState(),
+        ...parsed,
+        settings: { ...defaultState().settings, ...(parsed.settings || {}) },
+        connection: { ...defaultState().connection, ...(parsed.connection || {}) },
+      };
     } catch {
       return defaultState();
     }
@@ -52,6 +61,80 @@
   let pending = []; // attachments waiting to be sent
   let abortCtl = null;
   let streaming = false;
+  // "proxy": this page is served by server.js, which holds the key.
+  // "direct": static hosting (e.g. GitHub Pages); the browser calls OmniRoute itself.
+  let mode = "direct";
+
+  async function detectMode() {
+    try {
+      const res = await fetch("api/health", { cache: "no-store" });
+      if (res.ok && (await res.json()).ok === true) return "proxy";
+    } catch {
+      /* no proxy available */
+    }
+    return "direct";
+  }
+
+  function baseUrl() {
+    return state.connection.baseUrl.trim().replace(/\/+$/, "");
+  }
+
+  function endpoint(kind) {
+    if (mode === "proxy") return kind === "models" ? "api/models" : "api/chat";
+    return `${baseUrl()}/v1/${kind === "models" ? "models" : "chat/completions"}`;
+  }
+
+  function authHeaders(json) {
+    const headers = {};
+    if (json) headers["Content-Type"] = "application/json";
+    const key = state.connection.apiKey.trim();
+    if (mode === "direct" && key) headers.Authorization = `Bearer ${key}`;
+    return headers;
+  }
+
+  function connectionProblem() {
+    if (mode === "proxy") return "";
+    const raw = baseUrl();
+    if (!raw) return "Open Settings and enter your OmniRoute URL to get started.";
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      return "The OmniRoute URL in Settings is not valid.";
+    }
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (location.protocol === "https:" && url.protocol === "http:" && !local) {
+      return "This page uses HTTPS, so browsers block an http:// OmniRoute address. Use an https:// URL.";
+    }
+    return "";
+  }
+
+  function networkMessage() {
+    return mode === "direct"
+      ? `Could not reach OmniRoute at ${baseUrl()}. Check the URL, that it is online, and that it allows browser (CORS) requests.`
+      : "Could not reach the server.";
+  }
+
+  function openSettings() {
+    els.systemPrompt.value = state.settings.systemPrompt;
+    els.temperature.value = state.settings.temperature;
+    els.tempOut.textContent = state.settings.temperature;
+    els.useTemp.checked = state.settings.useTemp;
+    els.baseUrl.value = state.connection.baseUrl;
+    els.apiKey.value = state.connection.apiKey;
+    els.connection.classList.toggle("hidden", mode !== "direct");
+    if (typeof els.settings.showModal === "function") els.settings.showModal();
+    else els.settings.setAttribute("open", "");
+    els.app.classList.remove("sidebar-open");
+  }
+
+  function ensureConnected() {
+    const problem = connectionProblem();
+    if (!problem) return true;
+    setStatus(problem, true);
+    if (!baseUrl() && mode === "direct") openSettings();
+    return false;
+  }
 
   function save() {
     try {
@@ -358,10 +441,10 @@
     };
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch(endpoint("chat"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        headers: authHeaders(true),
+        body: JSON.stringify({ ...body, stream: true }),
         signal: abortCtl.signal,
       });
       if (!res.ok) {
@@ -407,6 +490,8 @@
     } catch (err) {
       if (err.name === "AbortError") {
         setStatus(assistant.content ? "Stopped." : "");
+      } else if (err.name === "TypeError") {
+        setStatus(networkMessage(), true);
       } else {
         setStatus(err.message || "Something went wrong.", true);
       }
@@ -426,6 +511,7 @@
     if (streaming) return;
     const text = els.input.value.trim();
     if (!text && !pending.length) return;
+    if (!ensureConnected()) return;
 
     const chat = activeChat() || newChat();
     const msg = {
@@ -450,7 +536,7 @@
 
   async function regenerate() {
     const chat = activeChat();
-    if (!chat || streaming) return;
+    if (!chat || streaming || !ensureConnected()) return;
     while (chat.messages.length && chat.messages[chat.messages.length - 1].role === "assistant") chat.messages.pop();
     if (!chat.messages.length) return;
     await generate(chat);
@@ -459,9 +545,15 @@
   // ---------- Models ----------
   async function loadModels() {
     try {
-      const res = await fetch("/api/models");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error?.message || `Request failed (${res.status})`);
+      const problem = connectionProblem();
+      if (problem) throw new Error(problem);
+      const res = await fetch(endpoint("models"), { headers: authHeaders(false) });
+      let data = {};
+      try { data = await res.json(); } catch { /* non-JSON body */ }
+      if (!res.ok) {
+        const hint = res.status === 401 ? " Check the API key in Settings." : "";
+        throw new Error((data?.error?.message || `Request failed (${res.status}).`) + hint);
+      }
       const ids = (data.data || []).map((m) => m.id).filter(Boolean).sort((a, b) => a.localeCompare(b));
       if (!ids.length) throw new Error("OmniRoute returned no models. Connect a provider in its dashboard.");
       els.modelSelect.textContent = "";
@@ -481,7 +573,7 @@
       opt.value = state.model || "";
       opt.textContent = state.model || "No models available";
       els.modelSelect.appendChild(opt);
-      setStatus(err.message, true);
+      setStatus(err.name === "TypeError" ? networkMessage() : err.message, true);
     }
   }
 
@@ -607,14 +699,7 @@
     save();
   });
 
-  $("openSettings").addEventListener("click", () => {
-    els.systemPrompt.value = state.settings.systemPrompt;
-    els.temperature.value = state.settings.temperature;
-    els.tempOut.textContent = state.settings.temperature;
-    els.useTemp.checked = state.settings.useTemp;
-    els.settings.showModal();
-    els.app.classList.remove("sidebar-open");
-  });
+  $("openSettings").addEventListener("click", openSettings);
   els.temperature.addEventListener("input", () => (els.tempOut.textContent = els.temperature.value));
   $("closeSettings").addEventListener("click", () => els.settings.close());
   els.settingsForm.addEventListener("submit", () => {
@@ -623,7 +708,11 @@
       temperature: Number(els.temperature.value),
       useTemp: els.useTemp.checked,
     };
+    if (mode === "direct") {
+      state.connection = { baseUrl: els.baseUrl.value.trim(), apiKey: els.apiKey.value.trim() };
+    }
     save();
+    if (mode === "direct") loadModels();
   });
   $("clearAll").addEventListener("click", () => {
     if (!confirm("Delete all chats from this browser? This cannot be undone.")) return;
@@ -640,5 +729,10 @@
   renderSidebar();
   renderMessages();
   autoresize();
-  loadModels();
+  (async () => {
+    mode = await detectMode();
+    els.connection.classList.toggle("hidden", mode !== "direct");
+    await loadModels();
+    if (mode === "direct" && !baseUrl()) openSettings();
+  })();
 })();

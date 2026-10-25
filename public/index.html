@@ -59,6 +59,16 @@
   <dialog id="settings">
     <form method="dialog" class="settings-form" id="settingsForm">
       <h2>Settings</h2>
+      <fieldset id="connection" class="connection hidden">
+        <legend>OmniRoute connection</legend>
+        <label>URL
+          <input type="url" id="baseUrl" placeholder="https://your-omniroute.example.com" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>API key
+          <input type="password" id="apiKey" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="note">Saved only in this browser (localStorage) and sent only to the URL above. Use a dedicated, low-privilege key, and avoid shared computers.</p>
+      </fieldset>
       <label>System prompt
         <textarea id="systemPrompt" rows="4" placeholder="Optional instructions applied to every chat, e.g. 'You are a concise financial analyst.'"></textarea>
       </label>
